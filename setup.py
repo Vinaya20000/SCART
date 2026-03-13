@@ -27,6 +27,7 @@ setup(
         "celltypist==1.7.1",
         "gseapy==1.1.11",
         "umap-learn==0.5.7",
+        "pandas==2.1.4",
         "harmonypy==0.0.10",
         "harmony-pytorch==0.1.8",
 
