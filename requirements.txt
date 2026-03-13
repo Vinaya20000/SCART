@@ -11,11 +11,12 @@
     "scvi-tools==1.1.6.post2",
     "scrublet==0.2.3",
     "popv==0.4.2",
+    "scib==1.1.7",
     "scmalignantfinder==1.0.1",
     "celltypist==1.7.1",
     "gseapy==1.1.11",
     "umap-learn==0.5.7",
-    "pandas==1.5.3",
+    "pandas==2.1.4",
     "harmonypy==0.0.10",
     "harmony-pytorch==0.1.8",
 
