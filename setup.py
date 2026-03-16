@@ -11,6 +11,7 @@ setup(
     zip_safe=False,
     install_requires=[
         "scanpy>=1.9",
+        "geofetch==0.12.10",
         "scvi-tools>=1.1",
         "numpy>=1.23,<2",
         "pandas>=1.5",
