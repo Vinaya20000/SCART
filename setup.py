@@ -21,7 +21,7 @@ setup(
         "scgen==2.1.0",
         "scvi-tools==1.1.6.post2",
         "scrublet==0.2.3",
-        "popv==0.4.2",
+        "popv>=0.5",
         "scmalignantfinder==1.0.1",
         "celltypist==1.7.1",
         "gseapy==1.1.11",
