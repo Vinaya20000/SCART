@@ -2,7 +2,7 @@
 anndata==0.9.1
 deap==1.4.3
 geofetch==0.12.10
-geoparse==2.0.4
+GEOparse==2.0.4
 scanpy==1.9.3
 numpy==1.23.4
 scanorama==1.7.4
