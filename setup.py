@@ -10,47 +10,15 @@ setup(
     include_package_data=True,
     zip_safe=False,
     install_requires=[
-        # single-cell ecosystem
-        "anndata==0.9.1",
-        "deap==1.4.3",
-        "geofetch==0.12.10",
-        "geoparse==2.0.4",
-        "scanpy==1.9.3",
-        "numpy==1.23.4",
-        "scanorama==1.7.4",
-        "bbknn==1.6.0",
-        "scgen==2.1.0",
-        "scvi-tools==1.1.6.post2",
-        "scrublet==0.2.3",
-        "popv>=0.5",
-        "scmalignantfinder==1.0.1",
-        "celltypist==1.7.1",
-        "gseapy==1.1.11",
-        "umap-learn==0.5.7",
-        "harmonypy==0.0.10",
-        "harmony-pytorch==0.1.8",
-
-        # ML / DL
-        "torch==2.6.0",
-        "pytorch-lightning==2.5.2",
-        "tensorflow==2.12",
-
-        # analysis utilities
-        "statsmodels==0.14.5",
-        "scikit-image==0.24.0",
-        "networkx==3.2.1",
-        "igraph==0.11.9",
-        "leidenalg==0.10.2",
-        "louvain==0.8.2",
-
-        # transformers / embeddings
-        "transformers==4.53.2",
-        "sentence-transformers==5.0.0",
-
-        # misc utilities
-        "joblib",
-        "rich",
+        "scanpy>=1.9",
+        "scvi-tools>=1.1",
+        "numpy>=1.23,<2",
+        "pandas>=1.5",
+        "scikit-learn>=1.2",
+        "torch>=2.0",
+        "tensorflow>=2.12",
+        "deap>=1.4",
         "typer",
-        "pydantic"
+        "rich"
     ]
 )
