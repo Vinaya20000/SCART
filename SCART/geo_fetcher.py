@@ -9,7 +9,7 @@ import shutil
 import tarfile
 import pandas as pd
 import scanpy as sc
-from geofetch import GeoFetcher
+from geofetch import Geofetcher
 
 # =========================================================
 logging.getLogger().handlers.clear()
