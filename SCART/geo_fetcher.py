@@ -141,7 +141,7 @@ class SampleAnnotator:
 
         gse_dir = os.path.join(self.data_dir, self.current_gse_id)
 
-        fetcher = GeoFetcher(
+        fetcher = Geofetcher(
             accession=self.current_gse_id,
             processed=True,
             just_metadata=False
