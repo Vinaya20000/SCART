@@ -23,10 +23,7 @@
     "torch==2.6.0",
     "pytorch-lightning==2.5.2",
     "tensorflow==2.12",
-    "jax==0.4.30",
-    "jaxlib==0.4.30",
-    "flax==0.8.5",
-    "optax==0.2.4",
+
 
     # analysis utilities
     "statsmodels==0.14.5",
