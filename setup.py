@@ -16,6 +16,7 @@ setup(
         "geofetch==0.12.10",
         "geoparse==2.0.4",
         "scanpy==1.9.3",
+        "numpy==1.23.4",
         "scanorama==1.7.4",
         "bbknn==1.6.0",
         "scgen==2.1.0",
