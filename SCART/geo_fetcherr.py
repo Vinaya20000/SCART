@@ -273,6 +273,9 @@ class SampleAnnotator:
             if df.shape[0] < df.shape[1]:
                 df = df.T
 
+            # ✅ ensure numeric only
+            df = df.apply(pd.to_numeric, errors='coerce').fillna(0)
+
             return ad.AnnData(df)
 
         except Exception:
@@ -295,7 +298,6 @@ class SampleAnnotator:
 
             gsm_dir = os.path.join(gse_dir, gsm_id)
 
-            # fallback to Supp_* folders
             if not os.path.isdir(gsm_dir):
 
                 supp_dirs = [
@@ -307,8 +309,6 @@ class SampleAnnotator:
                     gsm_dir = os.path.join(gse_dir, supp_dirs[0])
                 else:
                     continue
-
-            adata = None
 
             files = os.listdir(gsm_dir)
 
@@ -324,30 +324,48 @@ class SampleAnnotator:
                 elif "barcodes" in f and f.endswith(".tsv.gz"):
                     barcodes_file = f
 
+            adata = None
+
+            # ✅ MTX priority
             if matrix_file and features_file and barcodes_file:
 
-                os.rename(os.path.join(gsm_dir, matrix_file),
-                          os.path.join(gsm_dir, "matrix.mtx.gz"))
+                try:
+                    os.rename(os.path.join(gsm_dir, matrix_file),
+                              os.path.join(gsm_dir, "matrix.mtx.gz"))
+                except:
+                    pass
 
-                os.rename(os.path.join(gsm_dir, features_file),
-                          os.path.join(gsm_dir, "features.tsv.gz"))
+                try:
+                    os.rename(os.path.join(gsm_dir, features_file),
+                              os.path.join(gsm_dir, "features.tsv.gz"))
+                except:
+                    pass
 
-                os.rename(os.path.join(gsm_dir, barcodes_file),
-                          os.path.join(gsm_dir, "barcodes.tsv.gz"))
+                try:
+                    os.rename(os.path.join(gsm_dir, barcodes_file),
+                              os.path.join(gsm_dir, "barcodes.tsv.gz"))
+                except:
+                    pass
 
-                print(f"Reading MTX matrix for {gsm_id}")
+                try:
+                    print(f"Reading MTX matrix for {gsm_id}")
 
-                adata = sc.read_10x_mtx(
-                    gsm_dir,
-                    var_names="gene_symbols",
-                    cache=False
-                )
+                    adata = sc.read_10x_mtx(
+                        gsm_dir,
+                        var_names="gene_symbols",
+                        cache=False
+                    )
 
+                except Exception:
+                    print(f"Skipping {gsm_id} (MTX read failed)")
+
+            # ✅ SAFE generic fallback
             if adata is None:
 
-                for f in os.listdir(gsm_dir):
+                for f in files:
 
-                    if any(f.endswith(ext) for ext in [".tsv", ".csv", ".txt", ".gz"]):
+                    if any(f.endswith(ext) for ext in [".tsv", ".csv", ".txt", ".gz"]) \
+                       and "matrix" in f.lower():
 
                         file_path = os.path.join(gsm_dir, f)
 
@@ -359,6 +377,7 @@ class SampleAnnotator:
                             break
 
             if adata is None:
+                print(f"Skipping {gsm_id} (no valid expression matrix)")
                 continue
 
             adata.obs["gsm_id"] = gsm_id
