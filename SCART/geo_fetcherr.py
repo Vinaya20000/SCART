@@ -4,7 +4,6 @@ import scanpy as sc
 import anndata as ad
 import pandas as pd
 import gzip
-import shutil
 import warnings
 
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -40,10 +39,6 @@ class SampleAnnotator:
         tumor_adatas = []
         results = {}
 
-        # -------------------------
-        # Handle GSE inputs
-        # -------------------------
-
         for gse_id in self.gse_ids:
 
             n, t, u, ann, ct = self._process_gse(gse_id)
@@ -75,10 +70,6 @@ class SampleAnnotator:
                 ct
             )
 
-        # -------------------------
-        # Handle h5ad inputs
-        # -------------------------
-
         for file in self.h5ad_inputs:
 
             print("\n========== Reading h5ad file ==========")
@@ -104,10 +95,6 @@ class SampleAnnotator:
         query_h5ad = None
 
         total_inputs = len(self.gse_ids) + len(self.h5ad_inputs)
-
-        # -------------------------
-        # SINGLE INPUT
-        # -------------------------
 
         if total_inputs == 1:
 
@@ -148,10 +135,6 @@ class SampleAnnotator:
                     None
                 )
 
-        # -------------------------
-        # MULTIPLE INPUTS
-        # -------------------------
-
         elif total_inputs > 1 and len(tumor_adatas) > 0:
 
             combined = ad.concat(tumor_adatas, join="outer")
@@ -188,16 +171,15 @@ class SampleAnnotator:
     def _process_gse(self, gse_id):
 
         gse_dir = os.path.join(self.base_dir, gse_id)
+
         os.makedirs(gse_dir, exist_ok=True)
 
-        # ✅ DOWNLOAD ALL SUPPLEMENTARY FILES
         gse = GEOparse.get_GEO(
             geo=gse_id,
-            destdir=gse_dir,
-            annotate_gpl=True,
-            how="full"
+            destdir=gse_dir
         )
 
+        # ✅ NEW: download supplementary files
         gse.download_supplementary_files(gse_dir)
 
         normal = []
@@ -225,14 +207,17 @@ class SampleAnnotator:
             label = "unspecified"
 
             if any(k in text for k in tumor_keywords):
+
                 tumor.append(gsm_id)
                 label = "tumor"
 
             elif any(k in text for k in normal_keywords):
+
                 normal.append(gsm_id)
                 label = "normal"
 
             else:
+
                 unspecified.append(gsm_id)
 
             annotation_info[gsm_id] = label
@@ -259,9 +244,7 @@ class SampleAnnotator:
             if df.shape[0] < df.shape[1]:
                 df = df.T
 
-            adata = ad.AnnData(df)
-
-            return adata
+            return ad.AnnData(df)
 
         except Exception:
             return None
@@ -279,61 +262,70 @@ class SampleAnnotator:
 
         adatas = []
 
-        for root, dirs, files in os.walk(gse_dir):
+        for gsm_id in tumor_samples:
 
-            # ✅ 10X FORMAT
-            if any("matrix.mtx" in f for f in files):
-                try:
-                    print(f"Reading 10X data from {root}")
+            gsm_dir = os.path.join(gse_dir, gsm_id)
+
+            if not os.path.isdir(gsm_dir):
+                continue
+
+            adata = None
+
+            # ✅ 1. Try 10X format (original behavior)
+            for f in os.listdir(gsm_dir):
+
+                if "matrix" in f and f.endswith(".mtx.gz"):
+
+                    print(f"Reading MTX matrix for {gsm_id}")
 
                     adata = sc.read_10x_mtx(
-                        root,
+                        gsm_dir,
                         var_names="gene_symbols",
                         cache=False
                     )
+                    break
 
-                    adata.obs["gse_id"] = gse_id
+            # ✅ 2. NEW: Try generic formats if MTX not found
+            if adata is None:
 
-                    adata.layers["counts"] = adata.X.copy()
-                    adata.raw = adata
-                    adata.obs_names_make_unique()
+                for f in os.listdir(gsm_dir):
 
-                    adatas.append(adata)
-                    continue
+                    if any(f.endswith(ext) for ext in [".tsv", ".csv", ".txt", ".gz"]):
 
-                except Exception:
-                    pass
+                        file_path = os.path.join(gsm_dir, f)
 
-            # ✅ TSV / CSV / TXT
-            for f in files:
+                        print(f"Reading generic matrix for {gsm_id}: {f}")
 
-                if any(f.endswith(ext) for ext in [".tsv", ".csv", ".txt", ".gz"]):
+                        adata = self._read_generic_matrix(file_path)
 
-                    file_path = os.path.join(root, f)
+                        if adata is not None:
+                            break
 
-                    print(f"Reading generic matrix: {f}")
+            if adata is None:
+                continue
 
-                    adata = self._read_generic_matrix(file_path)
+            # ✅ ORIGINAL METADATA (unchanged)
+            adata.obs["gsm_id"] = gsm_id
+            adata.obs["gse_id"] = gse_id
 
-                    if adata is not None:
+            adata.layers["counts"] = adata.X.copy()
+            adata.raw = adata
 
-                        adata.obs["gse_id"] = gse_id
+            adata.obs_names_make_unique()
 
-                        adata.layers["counts"] = adata.X.copy()
-                        adata.raw = adata
-                        adata.obs_names_make_unique()
-
-                        adatas.append(adata)
+            adatas.append(adata)
 
         if len(adatas) == 0:
             return None
 
         combined = ad.concat(adatas, join="outer")
+
         combined.obs_names_make_unique()
 
         print("... storing 'gsm_id' as categorical")
         print("... storing 'gse_id' as categorical")
 
+        combined.obs["gsm_id"] = combined.obs["gsm_id"].astype("category")
         combined.obs["gse_id"] = combined.obs["gse_id"].astype("category")
 
         if save_single:
