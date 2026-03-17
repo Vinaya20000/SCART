@@ -179,7 +179,6 @@ class SampleAnnotator:
             destdir=gse_dir
         )
 
-        # ✅ NEW: download supplementary files
         gse.download_supplementary_files(gse_dir)
 
         normal = []
@@ -232,7 +231,6 @@ class SampleAnnotator:
 
 
 
-    # ✅ UPDATED FUNCTION (ONLY CHANGE)
     def _predict_cancer_type(self, gse):
 
         text = (
@@ -297,12 +295,21 @@ class SampleAnnotator:
 
             gsm_dir = os.path.join(gse_dir, gsm_id)
 
+            # ✅ FIX: fallback to Supp_* folders
             if not os.path.isdir(gsm_dir):
-                continue
+
+                supp_dirs = [
+                    d for d in os.listdir(gse_dir)
+                    if d.startswith(f"Supp_{gsm_id}")
+                ]
+
+                if len(supp_dirs) > 0:
+                    gsm_dir = os.path.join(gse_dir, supp_dirs[0])
+                else:
+                    continue
 
             adata = None
 
-            # ✅ 1. Try 10X format (original behavior)
             for f in os.listdir(gsm_dir):
 
                 if "matrix" in f and f.endswith(".mtx.gz"):
@@ -316,7 +323,6 @@ class SampleAnnotator:
                     )
                     break
 
-            # ✅ 2. NEW: Try generic formats if MTX not found
             if adata is None:
 
                 for f in os.listdir(gsm_dir):
