@@ -137,21 +137,30 @@ class SampleAnnotator:
         gse = GEOparse.get_GEO(
             geo=gse_id,
             destdir=gse_dir,
-            how="full"
+            how="full"   # ✅ added
         )
 
-        # ✅ download supplementary safely
+        # ✅ download supplementary files
         try:
             gse.download_supplementary_files()
         except Exception as e:
-            print(f"Warning: Supplementary download issue: {e}")
+            print(f"Warning: {e}")
 
-        normal, tumor, unspecified, annotation_info = [], [], [], {}
+        normal = []
+        tumor = []
+        unspecified = []
+        annotation_info = {}
 
         cancer_type = self._predict_cancer_type(gse)
 
-        tumor_keywords = ["tumor", "tumour", "cancer", "carcinoma", "adenocarcinoma", "malignant", "metastatic"]
-        normal_keywords = ["normal", "healthy", "control", "adjacent normal"]
+        tumor_keywords = [
+            "tumor", "tumour", "cancer", "carcinoma",
+            "adenocarcinoma", "malignant", "metastatic"
+        ]
+
+        normal_keywords = [
+            "normal", "healthy", "control", "adjacent normal"
+        ]
 
         for gsm_id, gsm in gse.gsms.items():
 
@@ -183,8 +192,11 @@ class SampleAnnotator:
 
     def _predict_cancer_type(self, gse):
 
-        text = (gse.metadata.get("title", [""])[0] + " " +
-                gse.metadata.get("summary", [""])[0]).lower()
+        text = (
+            gse.metadata.get("title", [""])[0] +
+            " " +
+            gse.metadata.get("summary", [""])[0]
+        ).lower()
 
         cancers = {
             "ovarian": "ovarian_cancer",
@@ -224,43 +236,71 @@ class SampleAnnotator:
         if len(tumor_samples) == 0:
             return None
 
+        gse_dir = os.path.join(self.base_dir, gse_id)
+
         print("\n========== Reading Tumor Samples ==========")
 
         adatas = []
 
-        # ✅ use supplementary folder if exists
+        # ✅ handle both normal + supplementary structure
+        search_dirs = [gse_dir]
+
         supp_dir = f"{gse_id}_Supp"
         if os.path.exists(supp_dir):
-            base_dir = supp_dir
-        else:
-            base_dir = os.path.join(self.base_dir, gse_id)
+            search_dirs.append(supp_dir)
 
-        for root, dirs, files in os.walk(base_dir):
+        for gsm_id in tumor_samples:
 
-            for gsm_id in tumor_samples:
+            found = False
 
-                if gsm_id not in root:
-                    continue
+            for base in search_dirs:
 
-                try:
+                # ✅ check both folder + flat structure
+                gsm_dir = os.path.join(base, gsm_id)
 
+                if os.path.isdir(gsm_dir):
+
+                    files = os.listdir(gsm_dir)
+
+                    # ---- MTX ----
                     if any(f.endswith(".mtx.gz") for f in files):
-                        print(f"Reading MTX for {gsm_id}")
+                        print(f"Reading MTX matrix for {gsm_id}")
 
-                        adata = sc.read_10x_mtx(root, var_names="gene_symbols")
+                        try:
+                            adata = sc.read_10x_mtx(gsm_dir, var_names="gene_symbols", cache=False)
+                        except Exception:
+                            continue
 
+                        found = True
+
+                    # ---- TEXT ----
                     elif any(f.endswith((".txt", ".csv", ".tsv", ".txt.gz")) for f in files):
-                        print(f"Reading TEXT for {gsm_id}")
+                        print(f"Reading TEXT matrix for {gsm_id}")
 
                         file = [f for f in files if f.endswith((".txt", ".csv", ".tsv", ".txt.gz"))][0]
 
-                        df = pd.read_csv(os.path.join(root, file), sep=None, engine="python", index_col=0)
-
+                        df = pd.read_csv(os.path.join(gsm_dir, file), sep=None, engine="python", index_col=0)
                         adata = ad.AnnData(df.T)
 
-                    else:
+                        found = True
+
+                else:
+                    # ✅ flat structure
+                    files = [f for f in os.listdir(base) if gsm_id in f]
+
+                    if len(files) == 0:
                         continue
 
+                    print(f"Reading flat files for {gsm_id}")
+
+                    file = [f for f in files if f.endswith((".txt", ".csv", ".tsv", ".txt.gz"))]
+
+                    if len(file) > 0:
+                        df = pd.read_csv(os.path.join(base, file[0]), sep=None, engine="python", index_col=0)
+                        adata = ad.AnnData(df.T)
+                        found = True
+
+                if found:
                     adata.obs["gsm_id"] = gsm_id
                     adata.obs["gse_id"] = gse_id
 
@@ -270,20 +310,21 @@ class SampleAnnotator:
                     adata.obs_names_make_unique()
 
                     adatas.append(adata)
+                    break
 
-                except Exception as e:
-                    print(f"Skipping {gsm_id} due to error: {e}")
-                    continue
+            if not found:
+                print(f"Skipping {gsm_id} (no usable data)")
 
         if len(adatas) == 0:
-            print("No valid tumor data found.")
             return None
 
         combined = ad.concat(adatas, join="outer")
         combined.obs_names_make_unique()
 
         if save_single:
+
             filename = f"{gse_id}_tumor.h5ad"
+
             combined.write(filename)
 
             print("\n========== h5ad created ==========")
