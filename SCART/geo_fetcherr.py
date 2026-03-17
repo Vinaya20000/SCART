@@ -232,6 +232,37 @@ class SampleAnnotator:
 
 
 
+    # ✅ UPDATED FUNCTION (ONLY CHANGE)
+    def _predict_cancer_type(self, gse):
+
+        text = (
+            gse.metadata.get("title", [""])[0] +
+            " " +
+            gse.metadata.get("summary", [""])[0]
+        ).lower()
+
+        cancer_keywords = [
+            "ovarian", "breast", "lung", "colon", "colorectal",
+            "prostate", "pancreatic", "liver", "hepatocellular",
+            "kidney", "renal", "bladder", "gastric", "stomach",
+            "melanoma", "glioma", "leukemia", "lymphoma",
+            "myeloma", "sarcoma", "cervical", "endometrial",
+            "thyroid", "esophageal", "head and neck", "neuroblastoma"
+        ]
+
+        detected = []
+
+        for cancer in cancer_keywords:
+            if cancer in text:
+                detected.append(cancer + "_cancer")
+
+        if len(detected) == 0:
+            return None
+
+        return ", ".join(sorted(set(detected)))
+
+
+
     def _read_generic_matrix(self, file_path):
 
         try:
@@ -304,7 +335,6 @@ class SampleAnnotator:
             if adata is None:
                 continue
 
-            # ✅ ORIGINAL METADATA (unchanged)
             adata.obs["gsm_id"] = gsm_id
             adata.obs["gse_id"] = gse_id
 
