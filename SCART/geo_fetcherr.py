@@ -295,7 +295,7 @@ class SampleAnnotator:
 
             gsm_dir = os.path.join(gse_dir, gsm_id)
 
-            # ✅ FIX: fallback to Supp_* folders
+            # fallback to Supp_* folders
             if not os.path.isdir(gsm_dir):
 
                 supp_dirs = [
@@ -310,18 +310,38 @@ class SampleAnnotator:
 
             adata = None
 
-            for f in os.listdir(gsm_dir):
+            files = os.listdir(gsm_dir)
 
+            matrix_file = None
+            features_file = None
+            barcodes_file = None
+
+            for f in files:
                 if "matrix" in f and f.endswith(".mtx.gz"):
+                    matrix_file = f
+                elif "features" in f and f.endswith(".tsv.gz"):
+                    features_file = f
+                elif "barcodes" in f and f.endswith(".tsv.gz"):
+                    barcodes_file = f
 
-                    print(f"Reading MTX matrix for {gsm_id}")
+            if matrix_file and features_file and barcodes_file:
 
-                    adata = sc.read_10x_mtx(
-                        gsm_dir,
-                        var_names="gene_symbols",
-                        cache=False
-                    )
-                    break
+                os.rename(os.path.join(gsm_dir, matrix_file),
+                          os.path.join(gsm_dir, "matrix.mtx.gz"))
+
+                os.rename(os.path.join(gsm_dir, features_file),
+                          os.path.join(gsm_dir, "features.tsv.gz"))
+
+                os.rename(os.path.join(gsm_dir, barcodes_file),
+                          os.path.join(gsm_dir, "barcodes.tsv.gz"))
+
+                print(f"Reading MTX matrix for {gsm_id}")
+
+                adata = sc.read_10x_mtx(
+                    gsm_dir,
+                    var_names="gene_symbols",
+                    cache=False
+                )
 
             if adata is None:
 
