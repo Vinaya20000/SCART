@@ -137,10 +137,10 @@ class SampleAnnotator:
         gse = GEOparse.get_GEO(
             geo=gse_id,
             destdir=gse_dir,
-            how="full"   # ✅ added
+            how="full"   #  added
         )
 
-        # ✅ download supplementary files
+        #  download supplementary files
         try:
             gse.download_supplementary_files()
         except Exception as e:
@@ -242,7 +242,7 @@ class SampleAnnotator:
 
         adatas = []
 
-        # ✅ handle both normal + supplementary structure
+        #  handle both normal + supplementary structure
         search_dirs = [gse_dir]
 
         supp_dir = f"{gse_id}_Supp"
@@ -255,7 +255,7 @@ class SampleAnnotator:
 
             for base in search_dirs:
 
-                # ✅ check both folder + flat structure
+                #  check both folder + flat structure
                 gsm_dir = os.path.join(base, gsm_id)
 
                 if os.path.isdir(gsm_dir):
@@ -285,7 +285,7 @@ class SampleAnnotator:
                         found = True
 
                 else:
-                    # ✅ flat structure
+                    #  flat structure
                     files = [f for f in os.listdir(base) if gsm_id in f]
 
                     if len(files) == 0:
