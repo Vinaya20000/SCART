@@ -2,6 +2,7 @@ import GEOparse
 import os
 import scanpy as sc
 import anndata as ad
+import pandas as pd
 import warnings
 
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -108,7 +109,6 @@ class SampleAnnotator:
 
         if total_inputs == 1:
 
-            # Single GSE (existing behavior)
             if len(self.gse_ids) == 1:
 
                 query_h5ad = f"{self.gse_ids[0]}_tumor.h5ad"
@@ -122,7 +122,6 @@ class SampleAnnotator:
                     cancer_type
                 )
 
-            # Single h5ad input (new behavior)
             elif len(self.h5ad_inputs) == 1:
 
                 adata = tumor_adatas[0]
@@ -190,10 +189,17 @@ class SampleAnnotator:
 
         os.makedirs(gse_dir, exist_ok=True)
 
+        #  OPTION 1: download full + supplementary files
         gse = GEOparse.get_GEO(
             geo=gse_id,
-            destdir=gse_dir
+            destdir=gse_dir,
+            how="full"
         )
+
+        try:
+            gse.download_supplementary_files()
+        except Exception as e:
+            print(f"Warning: could not download supplementary files: {e}")
 
         normal = []
         tumor = []
@@ -203,20 +209,12 @@ class SampleAnnotator:
         cancer_type = self._predict_cancer_type(gse)
 
         tumor_keywords = [
-            "tumor",
-            "tumour",
-            "cancer",
-            "carcinoma",
-            "adenocarcinoma",
-            "malignant",
-            "metastatic"
+            "tumor", "tumour", "cancer", "carcinoma",
+            "adenocarcinoma", "malignant", "metastatic"
         ]
 
         normal_keywords = [
-            "normal",
-            "healthy",
-            "control",
-            "adjacent normal"
+            "normal", "healthy", "control", "adjacent normal"
         ]
 
         for gsm_id, gsm in gse.gsms.items():
@@ -228,39 +226,23 @@ class SampleAnnotator:
             label = "unspecified"
 
             if any(k in text for k in tumor_keywords):
-
                 tumor.append(gsm_id)
                 label = "tumor"
 
             elif any(k in text for k in normal_keywords):
-
                 normal.append(gsm_id)
                 label = "normal"
 
             else:
-
                 unspecified.append(gsm_id)
 
             annotation_info[gsm_id] = label
 
         print(f"\n========== SAMPLE SUMMARY: {gse_id} ==========")
-
         print(f"Cancer type: {cancer_type}")
-
-        print(
-            "Normal samples:",
-            ", ".join(normal) if normal else "None"
-        )
-
-        print(
-            "Tumor samples:",
-            ", ".join(tumor) if tumor else "None"
-        )
-
-        print(
-            "Unspecified samples:",
-            ", ".join(unspecified) if unspecified else "None"
-        )
+        print("Normal samples:", ", ".join(normal) if normal else "None")
+        print("Tumor samples:", ", ".join(tumor) if tumor else "None")
+        print("Unspecified samples:", ", ".join(unspecified) if unspecified else "None")
 
         return normal, tumor, unspecified, annotation_info, cancer_type
 
@@ -274,17 +256,37 @@ class SampleAnnotator:
             gse.metadata.get("summary", [""])[0]
         ).lower()
 
-        if "ovarian" in text:
-            return "ovarian_cancer"
+        cancer_map = {
+            "ovarian": "ovarian_cancer",
+            "breast": "breast_cancer",
+            "lung": "lung_cancer",
+            "colon": "colon_cancer",
+            "colorectal": "colorectal_cancer",
+            "prostate": "prostate_cancer",
+            "pancreatic": "pancreatic_cancer",
+            "liver": "liver_cancer",
+            "hepatocellular": "liver_cancer",
+            "kidney": "kidney_cancer",
+            "renal": "kidney_cancer",
+            "bladder": "bladder_cancer",
+            "gastric": "gastric_cancer",
+            "stomach": "gastric_cancer",
+            "melanoma": "melanoma",
+            "leukemia": "leukemia",
+            "lymphoma": "lymphoma",
+            "brain": "brain_cancer",
+            "glioblastoma": "glioblastoma",
+            "sarcoma": "sarcoma",
+            "thyroid": "thyroid_cancer",
+            "cervical": "cervical_cancer",
+            "endometrial": "endometrial_cancer",
+            "esophageal": "esophageal_cancer",
+            "head and neck": "head_neck_cancer"
+        }
 
-        if "breast" in text:
-            return "breast_cancer"
-
-        if "lung" in text:
-            return "lung_cancer"
-
-        if "colon" in text:
-            return "colon_cancer"
+        for key in cancer_map:
+            if key in text:
+                return cancer_map[key]
 
         return None
 
@@ -308,23 +310,48 @@ class SampleAnnotator:
             if not os.path.isdir(gsm_dir):
                 continue
 
-            matrix = None
+            files = os.listdir(gsm_dir)
+            print(f"Checking {gsm_id}: {files}")
 
-            for f in os.listdir(gsm_dir):
+            adata = None
 
-                if "matrix" in f and f.endswith(".mtx.gz"):
-                    matrix = f
+            #  OPTION 2: 10x MTX
+            if any(f.endswith(".mtx.gz") for f in files):
 
-            if matrix is None:
+                print(f"Reading MTX matrix for {gsm_id}")
+
+                adata = sc.read_10x_mtx(
+                    gsm_dir,
+                    var_names="gene_symbols",
+                    cache=False
+                )
+
+            #  OPTION 3: text / csv formats
+            elif any(f.endswith((".txt", ".txt.gz", ".csv", ".tsv")) for f in files):
+
+                print(f"Reading TEXT/CSV matrix for {gsm_id}")
+
+                for f in files:
+                    if f.endswith((".txt", ".txt.gz", ".csv", ".tsv")):
+                        path = os.path.join(gsm_dir, f)
+                        df = pd.read_csv(path, sep=None, engine="python", index_col=0)
+                        adata = ad.AnnData(df.T)
+                        break
+
+            #  OPTION 3: h5 format
+            elif any(f.endswith(".h5") for f in files):
+
+                print(f"Reading H5 matrix for {gsm_id}")
+
+                for f in files:
+                    if f.endswith(".h5"):
+                        path = os.path.join(gsm_dir, f)
+                        adata = sc.read_10x_h5(path)
+                        break
+
+            if adata is None:
+                print(f"No usable data for {gsm_id}")
                 continue
-
-            print(f"Reading MTX matrix for {gsm_id}")
-
-            adata = sc.read_10x_mtx(
-                gsm_dir,
-                var_names="gene_symbols",
-                cache=False
-            )
 
             adata.obs["gsm_id"] = gsm_id
             adata.obs["gse_id"] = gse_id
