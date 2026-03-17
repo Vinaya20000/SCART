@@ -2,7 +2,6 @@ import GEOparse
 import os
 import scanpy as sc
 import anndata as ad
-import pandas as pd
 import warnings
 
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -109,6 +108,7 @@ class SampleAnnotator:
 
         if total_inputs == 1:
 
+            # Single GSE (existing behavior)
             if len(self.gse_ids) == 1:
 
                 query_h5ad = f"{self.gse_ids[0]}_tumor.h5ad"
@@ -122,6 +122,7 @@ class SampleAnnotator:
                     cancer_type
                 )
 
+            # Single h5ad input (new behavior)
             elif len(self.h5ad_inputs) == 1:
 
                 adata = tumor_adatas[0]
@@ -302,43 +303,38 @@ class SampleAnnotator:
 
         for gsm_id in tumor_samples:
 
-            found = False
+            gsm_dir = os.path.join(gse_dir, gsm_id)
 
-            # ✅ ONLY CHANGE: recursive search
-            for root, dirs, files in os.walk(gse_dir):
+            if not os.path.isdir(gsm_dir):
+                continue
 
-                if gsm_id not in root:
-                    continue
+            matrix = None
 
-                if any(f.endswith(".mtx.gz") for f in files):
+            for f in os.listdir(gsm_dir):
 
-                    print(f"Reading MTX matrix for {gsm_id}")
+                if "matrix" in f and f.endswith(".mtx.gz"):
+                    matrix = f
 
-                    try:
-                        adata = sc.read_10x_mtx(
-                            root,
-                            var_names="gene_symbols",
-                            cache=False
-                        )
-                    except Exception as e:
-                        print(f"Failed reading MTX for {gsm_id}: {e}")
-                        continue
+            if matrix is None:
+                continue
 
-                    adata.obs["gsm_id"] = gsm_id
-                    adata.obs["gse_id"] = gse_id
+            print(f"Reading MTX matrix for {gsm_id}")
 
-                    adata.layers["counts"] = adata.X.copy()
-                    adata.raw = adata
+            adata = sc.read_10x_mtx(
+                gsm_dir,
+                var_names="gene_symbols",
+                cache=False
+            )
 
-                    adata.obs_names_make_unique()
+            adata.obs["gsm_id"] = gsm_id
+            adata.obs["gse_id"] = gse_id
 
-                    adatas.append(adata)
+            adata.layers["counts"] = adata.X.copy()
+            adata.raw = adata
 
-                    found = True
-                    break
+            adata.obs_names_make_unique()
 
-            if not found:
-                print(f"Skipping {gsm_id} (no usable data)")
+            adatas.append(adata)
 
         if len(adatas) == 0:
             return None
