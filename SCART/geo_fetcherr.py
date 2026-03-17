@@ -2,6 +2,9 @@ import GEOparse
 import os
 import scanpy as sc
 import anndata as ad
+import pandas as pd
+import gzip
+import shutil
 import warnings
 
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -108,7 +111,6 @@ class SampleAnnotator:
 
         if total_inputs == 1:
 
-            # Single GSE (existing behavior)
             if len(self.gse_ids) == 1:
 
                 query_h5ad = f"{self.gse_ids[0]}_tumor.h5ad"
@@ -122,7 +124,6 @@ class SampleAnnotator:
                     cancer_type
                 )
 
-            # Single h5ad input (new behavior)
             elif len(self.h5ad_inputs) == 1:
 
                 adata = tumor_adatas[0]
@@ -187,13 +188,17 @@ class SampleAnnotator:
     def _process_gse(self, gse_id):
 
         gse_dir = os.path.join(self.base_dir, gse_id)
-
         os.makedirs(gse_dir, exist_ok=True)
 
+        # ✅ DOWNLOAD ALL SUPPLEMENTARY FILES
         gse = GEOparse.get_GEO(
             geo=gse_id,
-            destdir=gse_dir
+            destdir=gse_dir,
+            annotate_gpl=True,
+            how="full"
         )
+
+        gse.download_supplementary_files(gse_dir)
 
         normal = []
         tumor = []
@@ -203,20 +208,12 @@ class SampleAnnotator:
         cancer_type = self._predict_cancer_type(gse)
 
         tumor_keywords = [
-            "tumor",
-            "tumour",
-            "cancer",
-            "carcinoma",
-            "adenocarcinoma",
-            "malignant",
-            "metastatic"
+            "tumor", "tumour", "cancer", "carcinoma",
+            "adenocarcinoma", "malignant", "metastatic"
         ]
 
         normal_keywords = [
-            "normal",
-            "healthy",
-            "control",
-            "adjacent normal"
+            "normal", "healthy", "control", "adjacent normal"
         ]
 
         for gsm_id, gsm in gse.gsms.items():
@@ -228,65 +225,46 @@ class SampleAnnotator:
             label = "unspecified"
 
             if any(k in text for k in tumor_keywords):
-
                 tumor.append(gsm_id)
                 label = "tumor"
 
             elif any(k in text for k in normal_keywords):
-
                 normal.append(gsm_id)
                 label = "normal"
 
             else:
-
                 unspecified.append(gsm_id)
 
             annotation_info[gsm_id] = label
 
         print(f"\n========== SAMPLE SUMMARY: {gse_id} ==========")
-
         print(f"Cancer type: {cancer_type}")
-
-        print(
-            "Normal samples:",
-            ", ".join(normal) if normal else "None"
-        )
-
-        print(
-            "Tumor samples:",
-            ", ".join(tumor) if tumor else "None"
-        )
-
-        print(
-            "Unspecified samples:",
-            ", ".join(unspecified) if unspecified else "None"
-        )
+        print("Normal samples:", ", ".join(normal) if normal else "None")
+        print("Tumor samples:", ", ".join(tumor) if tumor else "None")
+        print("Unspecified samples:", ", ".join(unspecified) if unspecified else "None")
 
         return normal, tumor, unspecified, annotation_info, cancer_type
 
 
 
-    def _predict_cancer_type(self, gse):
+    def _read_generic_matrix(self, file_path):
 
-        text = (
-            gse.metadata.get("title", [""])[0] +
-            " " +
-            gse.metadata.get("summary", [""])[0]
-        ).lower()
+        try:
+            if file_path.endswith(".gz"):
+                with gzip.open(file_path, 'rt') as f:
+                    df = pd.read_csv(f, sep=None, engine='python')
+            else:
+                df = pd.read_csv(file_path, sep=None, engine='python')
 
-        if "ovarian" in text:
-            return "ovarian_cancer"
+            if df.shape[0] < df.shape[1]:
+                df = df.T
 
-        if "breast" in text:
-            return "breast_cancer"
+            adata = ad.AnnData(df)
 
-        if "lung" in text:
-            return "lung_cancer"
+            return adata
 
-        if "colon" in text:
-            return "colon_cancer"
-
-        return None
+        except Exception:
+            return None
 
 
 
@@ -301,47 +279,62 @@ class SampleAnnotator:
 
         adatas = []
 
-        for gsm_id in tumor_samples:
+        for root, dirs, files in os.walk(gse_dir):
 
-            gsm_dir = os.path.join(gse_dir, gsm_id)
+            # ✅ 10X FORMAT
+            if any("matrix.mtx" in f for f in files):
+                try:
+                    print(f"Reading 10X data from {root}")
 
-            if not os.path.isdir(gsm_dir):
-                continue
+                    adata = sc.read_10x_mtx(
+                        root,
+                        var_names="gene_symbols",
+                        cache=False
+                    )
 
-            matrix = None
+                    adata.obs["gse_id"] = gse_id
 
-            for f in os.listdir(gsm_dir):
+                    adata.layers["counts"] = adata.X.copy()
+                    adata.raw = adata
+                    adata.obs_names_make_unique()
 
-                if "matrix" in f and f.endswith(".mtx.gz"):
-                    matrix = f
+                    adatas.append(adata)
+                    continue
 
-            if matrix is None:
-                continue
+                except Exception:
+                    pass
 
-            print(f"Reading MTX matrix for {gsm_id}")
+            # ✅ TSV / CSV / TXT
+            for f in files:
 
-            adata = sc.read_10x_mtx(
-                gsm_dir,
-                var_names="gene_symbols",
-                cache=False
-            )
+                if any(f.endswith(ext) for ext in [".tsv", ".csv", ".txt", ".gz"]):
 
-            adata.obs["gsm_id"] = gsm_id
-            adata.obs["gse_id"] = gse_id
+                    file_path = os.path.join(root, f)
 
-            adata.layers["counts"] = adata.X.copy()
-            adata.raw = adata
+                    print(f"Reading generic matrix: {f}")
 
-            adata.obs_names_make_unique()
+                    adata = self._read_generic_matrix(file_path)
 
-            adatas.append(adata)
+                    if adata is not None:
+
+                        adata.obs["gse_id"] = gse_id
+
+                        adata.layers["counts"] = adata.X.copy()
+                        adata.raw = adata
+                        adata.obs_names_make_unique()
+
+                        adatas.append(adata)
 
         if len(adatas) == 0:
             return None
 
         combined = ad.concat(adatas, join="outer")
-
         combined.obs_names_make_unique()
+
+        print("... storing 'gsm_id' as categorical")
+        print("... storing 'gse_id' as categorical")
+
+        combined.obs["gse_id"] = combined.obs["gse_id"].astype("category")
 
         if save_single:
 
